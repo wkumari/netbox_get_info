@@ -3,21 +3,41 @@
 """
 This small program connects to my Netbox and pulls information, suitable for
 use in Ansible.
+
+It uses Authelia to login to Netbox. This is because I don't really want to
+just expose my Netbox API token to the world.
 """
 
 from colored import stylize
 from optparse import OptionParser
 import colored
 import json
+import os
 import pynetbox
+import requests
 import sys
 import util_token
 
 # Debug. If True then we print more stuff.
 DEBUG = False
 
+# The name of the netbox server.
+# Expects a file ~/.token_<server> containing the token.
 SERVER='netbox.kumari.net'
 
+# The URL of my Authelia server's login. We post here to get a cookie.
+LOGIN_URL = 'https://authelia.kumari.net/api/firstfactor'
+
+# Credential file for Authelia
+CREDENTIALS_FILE = '~/.credentials_authelia_netbox.json'
+
+# The payload we send to Authelia
+PAYLOAD_TEMPLATE = """{{"username": "{username}", \
+  "password": "{password}", "keepMeLoggedIn": false, \
+  "targetURL": "https://netbox.kumari.net/api",
+  "requestMethod": "GET"}}"""
+
+# Base class for all exceptions
 class Error(Exception):
     """Generic error."""
 
@@ -77,6 +97,10 @@ def ParseOptions():
                       action='store_true',
                       default=DEBUG,
                       help='Debug output.')
+    options.add_option('-n', '--nologin', dest='nologin',
+                      action='store_true',
+                      default=False,
+                      help='''Do not login through Authelia.''')
     options.add_option('-p', '--plain', dest='plain',
                       action='store_true',
                       default=False,
@@ -94,6 +118,22 @@ def ParseOptions():
     return opts, args
 
 
+def get_credentials(filename):
+  """Get the username and password from the config file."""
+  filename = os.path.expanduser(filename)
+  try:
+    with open(filename, "r") as jsonfile:
+      data = json.load(jsonfile)
+      username = data["username"]
+      password = data["password"]
+  except IOError as e:
+    abort(e)
+  except (ValueError, KeyError) as e:
+    abort('JSON object %s could be decoded from file: %s\n \
+      Expected: {"username":"bob", "password": "Hunter2"}' % (e, filename))
+  return username, password
+
+
 def cmd_bgp(nb):
   '''Command to get BGP prefixes'''
   prefixes = []
@@ -108,7 +148,7 @@ def cmd_bgp(nb):
     if prefix.custom_fields["announced_from"]:
       network["announced_from"] = prefix.custom_fields["announced_from"]
     prefixes.append(network)
-  print (json.dumps(prefixes, indent=2))
+  print((json.dumps(prefixes, indent=2)))
 
 
 def cmd_targets(nb):
@@ -130,24 +170,42 @@ def cmd_targets(nb):
     address["address"] = ip
     address["description"] = desc
     addresses.append(address)
-  print (json.dumps(addresses, indent=2))
+  print((json.dumps(addresses, indent=2)))
+
 
 def main():
-    """pylint FTW"""
-    token = util_token.get_token(opts.server)
+  """pylint FTW"""
+  token = util_token.get_token(opts.server)
 
-    debug('Connecting to %s' % opts.server)
-    nb = pynetbox.api('https://'+opts.server, token=token)
-    debug('Connected to %s' % opts.server)
+  # Create a session to use for all requests
+  session=requests.Session()
 
-    if args[0] == 'bgp':
-        cmd_bgp(nb)
-        return
-    if args[0] == 'targets':
-        cmd_targets(nb)
-        return
-    else:
-        abort('Unknown command: %s' % args[0])
+  if not opts.nologin:
+    (username, password) = get_credentials(CREDENTIALS_FILE)
+
+    payload = PAYLOAD_TEMPLATE.format(username=username,
+      password=password)
+
+    # Get a cookie from Authelia
+    debug('Connecting to %s' % LOGIN_URL)
+    post = session.post(LOGIN_URL, data=payload)
+    if post.status_code != 200:
+      abort('Authelia login failed: %s' % post.text)
+    debug ('Logged in through %s - Cookies: %s' % (LOGIN_URL, session.cookies))
+
+  debug('Connecting to %s' % opts.server)
+  nb = pynetbox.api('https://'+opts.server, token=token)
+  nb.http_session = session
+  debug('Connected to %s' % opts.server)
+
+  if args[0] == 'bgp':
+      cmd_bgp(nb)
+      return
+  if args[0] == 'targets':
+      cmd_targets(nb)
+      return
+  else:
+      abort('Unknown command: %s' % args[0])
 
 
 if __name__ == "__main__":
