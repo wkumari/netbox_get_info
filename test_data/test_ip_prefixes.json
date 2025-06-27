@@ -1,0 +1,104 @@
+[
+  {
+    "id": 755,
+    "url": "https://netbox.kumari.net/api/ipam/ip-addresses/755/",
+    "display": "10.72.69.1/24",
+    "family": {
+      "value": 4,
+      "label": "IPv4"
+    },
+    "address": "10.72.69.1/24",
+    "vrf": {
+      "id": 3,
+      "url": "https://netbox.kumari.net/api/ipam/vrfs/3/",
+      "display": "HE FMT2 - Management",
+      "name": "HE FMT2 - Management",
+      "rd": null,
+      "description": "Hurricane Electric"
+    },
+    "tenant": {
+      "id": 2,
+      "url": "https://netbox.kumari.net/api/tenancy/tenants/2/",
+      "display": "Warren",
+      "name": "Warren",
+      "slug": "warren",
+      "description": "My networks"
+    },
+    "status": {
+      "value": "active",
+      "label": "Active"
+    },
+    "role": null,
+    "assigned_object_type": null,
+    "assigned_object_id": null,
+    "assigned_object": null,
+    "nat_inside": null,
+    "nat_outside": [],
+    "dns_name": "",
+    "description": "",
+    "comments": "Management",
+    "tags": [
+      {
+        "id": 3,
+        "url": "https://netbox.kumari.net/api/extras/tags/3/",
+        "display": "Infrastructure",
+        "name": "Infrastructure",
+        "slug": "infrastructure",
+        "color": "9e9e9e"
+      }
+    ],
+    "custom_fields": {
+      "prefix_list_names": null
+    },
+    "created": "2024-04-30T18:48:53.768907-04:00",
+    "last_updated": "2025-06-13T08:18:47.660722-04:00"
+  },
+  {
+    "id": 42,
+    "url": "https://netbox.kumari.net/api/ipam/ip-addresses/42/",
+    "display": "192.168.0.4/24",
+    "family": {
+      "value": 4,
+      "label": "IPv4"
+    },
+    "address": "192.168.0.4/24",
+    "vrf": {
+      "id": 2,
+      "url": "https://netbox.kumari.net/api/ipam/vrfs/2/",
+      "display": "Dulles (Dulles)",
+      "name": "Dulles",
+      "rd": "Dulles",
+      "description": "Dulles RFC1918"
+    },
+    "tenant": {
+      "id": 2,
+      "url": "https://netbox.kumari.net/api/tenancy/tenants/2/",
+      "display": "Warren",
+      "name": "Warren",
+      "slug": "warren",
+      "description": "My networks"
+    },
+    "status": {
+      "value": "active",
+      "label": "Active"
+    },
+    "role": null,
+    "assigned_object_type": null,
+    "assigned_object_id": null,
+    "assigned_object": null,
+    "nat_inside": null,
+    "nat_outside": [],
+    "dns_name": "",
+    "description": "Symmetricom ND-4 (user: pi) - MAC: B8:27:EB:7D:5F:F6",
+    "comments": "",
+    "tags": [],
+    "custom_fields": {
+      "prefix_list_names": [
+        "bastions",
+        "ntp"
+      ]
+    },
+    "created": "2018-06-03T20:00:00-04:00",
+    "last_updated": "2025-06-24T03:41:14.566083-04:00"
+  }
+]
