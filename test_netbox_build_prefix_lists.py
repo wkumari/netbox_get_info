@@ -94,8 +94,9 @@ class TestGetPrefixes(unittest.TestCase):
         # We are using nb.ipam.ip_addresses.all, but mock filter in case we use it.
         netbox_mock.ipam.ip_addresses.filter.return_value = self.prefix_array
         netbox_mock.ipam.ip_addresses.all.return_value = self.prefix_array
+        netbox_mock.ipam.aggregates.all.return_value = self.prefix_array
 
-        self.assertEqual(len(get_prefixes_from_netbox(netbox_mock)), 2)
+        self.assertEqual(len(get_prefixes_from_netbox(netbox_mock)), 4)
 
 
 class TestPrefixes(unittest.TestCase):
