@@ -23,6 +23,7 @@ import pynetbox
 import requests
 import sys
 import util_token
+import yaml
 
 # Debug. If True then we print more stuff.
 DEBUG = False
@@ -46,7 +47,7 @@ PAYLOAD_TEMPLATE = """{{"username": "{username}", \
 # Output file for the prefix lists
 # This is a JUNOS style file.
 # It will be written to the current directory.
-OUTPUT_FILE = "GENERATED_PREFIX_LISTS.j2"
+OUTPUT_FILE = "NETBOX_PREFIX_LISTS.j2"
 
 
 class PrefixType(Enum):
@@ -82,6 +83,31 @@ class Prefix:
             f"custom_fields={self.custom_fields}, "
             f"prefix_lists={self.prefix_lists})"
         )
+
+    def format_comment(self):
+        """Format the comment for the prefix."""
+        have_info = False
+        comment = ""
+        # Format the address and comment.
+        address = self.ip
+
+        if self.dns:
+            comment += "[ %s ] " % self.dns
+            have_info = True
+        if self.device:
+            comment += "%s" % self.device
+            have_info = True
+        if self.interface:
+            comment += ":%s " % self.interface
+            have_info = True
+        if self.descr:
+            if have_info:
+                comment += "--"
+            comment += " %s " % self.descr
+        else:
+            if not have_info:
+                comment += " No description and no info "
+        return comment
 
 
 # A dictionary of prefix-filter name [ Prefix ]
@@ -165,6 +191,22 @@ def ParseOptions(arg_list: list[str] | None):
         default=SERVER,
         help="""The name of the netbox server.
                   Expects a file ~/.token_<server> containing the token.""",
+    )
+    parser.add_argument(
+        "-y",
+        "--no-yaml",
+        dest="yaml",
+        action="store_false",
+        default=True,
+        help="""Output the prefix lists in YAML format.""",
+    )
+    parser.add_argument(
+        "-j",
+        "--j2",
+        dest="j2",
+        action="store_true",
+        default=False,
+        help="""Output the prefix lists in .j2 (text) format.""",
     )
 
     args = parser.parse_args(arg_list)
@@ -361,6 +403,23 @@ def write_prefix_list_files(prefix_list_dict):
         logging.info("Wrote %d prefixes to %s-prefix.j2" % (len(prefixes), prefix_list))
 
 
+def build_yaml_structure(prefix_list_dict):
+    """Build a YAML structure from the prefix list dictionary."""
+    yaml_structure = {"networks": {}}
+    for prefix_list_name, prefixes in prefix_list_dict.items():
+        prefix_list_name = "NB_" + prefix_list_name
+        prefix_list = {"values": []}
+        for prex in prefixes:
+            # Create a dictionary for each prefix with its details.
+            prefix_info = {
+                "address": prex.ip,
+                "comment": prex.format_comment(),
+            }
+            prefix_list["values"].append(prefix_info)
+        yaml_structure["networks"][prefix_list_name.upper()] = prefix_list
+    return yaml_structure
+
+
 def write_prefix_list_file(prefix_list_dict, filename):
     """Writes a JUNOS style prefix list file."""
     header_str = "    prefix-list {} {{\n"
@@ -465,17 +524,34 @@ def main(arg_list: list[str] | None = None):
         dump_prefixes_to_file(prefixes, args.dumpfile)
         logging.info("Wrote %d prefixes to file" % len(prefixes))
         logging.debug("Exiting after writing prefixes to file")
-        sys.exit(0)
+        sys.exit(1)
 
     logging.debug("Found %d prefixes" % len(prefixes))
     prefix_list_list = parse_prefixes(prefixes)
     prefix_list_dict = build_prefix_list_dict(prefix_list_list)
-    # write_prefix_list_files(prefix_list_dict)
-    write_prefix_list_file(prefix_list_dict, args.outfile)
 
-    logging.info(
-        "Wrote %d prefix lists to file: %s" % (len(prefix_list_dict), args.outfile)
-    )
+    if args.j2:
+        write_prefix_list_file(prefix_list_dict, args.outfile)
+    elif args.yaml:
+        yaml_structure = build_yaml_structure(prefix_list_dict)
+        yaml_file = args.outfile.replace(".j2", ".yaml")
+        with open(yaml_file, "w") as f:
+            yaml.dump(yaml_structure, f, indent=2)
+        logging.info(
+            "Wrote %d prefix lists containing %d entries to %s"
+            % (
+                len(yaml_structure["networks"]),
+                sum(
+                    [
+                        len(yaml_structure["networks"][c]["values"])
+                        for c in yaml_structure["networks"]
+                    ]
+                ),
+                yaml_file,
+            )
+        )
+    else:
+        abort("No output format specified. Use -j for J2 or -y for YAML.")
 
 
 if __name__ == "__main__":

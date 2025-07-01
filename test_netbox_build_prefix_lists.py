@@ -96,7 +96,7 @@ class TestGetPrefixes(unittest.TestCase):
         netbox_mock.ipam.ip_addresses.all.return_value = self.prefix_array
         netbox_mock.ipam.aggregates.all.return_value = self.prefix_array
 
-        self.assertEqual(len(get_prefixes_from_netbox(netbox_mock)), 4)
+        self.assertEqual(len(get_prefixes_from_netbox(netbox_mock)), 6)
 
 
 class TestPrefixes(unittest.TestCase):
@@ -107,16 +107,19 @@ class TestPrefixes(unittest.TestCase):
     def test_parse_prefixes(self):
         parsed_prefixes = parse_prefixes(self.prefix_array)
         self.assertEqual(
-            len(parsed_prefixes), 2
+            len(parsed_prefixes), 3
         )  # Assuming there are 2 prefixes in the test data
-        self.assertEqual(parsed_prefixes[0].ip, "10.72.69.1/24")
+        # Note that IP addresses are mapped to /32s in the reults.
+        self.assertEqual(parsed_prefixes[0].ip, "10.72.69.1/32")
+        self.assertEqual(parsed_prefixes[1].ip, "192.168.0.4/32")
+        self.assertEqual(parsed_prefixes[2].ip, "192.168.0.0/16")
 
     def build_prefix_list_dict(self):
         prefix_list = build_prefix_list_dict(self.prefix_array)
         self.assertIsInstance(prefix_list, dict)
         self.assertIn("BASTIONS", prefix_list)
         self.assertEqual(len(prefix_list["BASTIONS"]), 1)
-        self.assertEqual(prefix_list["BASTIONS"][0].ip, "10.72.69.1/24")
+        self.assertEqual(prefix_list["BASTIONS"][0].ip, "10.72.69.1/32")
 
 
 if __name__ == "__main__":

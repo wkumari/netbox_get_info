@@ -100,5 +100,33 @@
     },
     "created": "2018-06-03T20:00:00-04:00",
     "last_updated": "2025-06-24T03:41:14.566083-04:00"
+  },
+    {
+    "id": 12,
+    "url": "https://netbox.kumari.net/api/ipam/aggregates/12/",
+    "display": "192.168.0.0/16",
+    "family": {
+      "value": 4,
+      "label": "IPv4"
+    },
+    "prefix": "192.168.0.0/16",
+    "rir": {
+      "id": 6,
+      "url": "https://netbox.kumari.net/api/ipam/rirs/6/",
+      "display": "RFC 1918",
+      "name": "RFC 1918",
+      "slug": "rfc-1918",
+      "description": ""
+    },
+    "tenant": null,
+    "date_added": null,
+    "description": "",
+    "comments": "",
+    "tags": [],
+    "custom_fields": {
+      "prefix_list_names": null
+    },
+    "created": "2019-05-10T20:00:00-04:00",
+    "last_updated": "2025-06-28T05:44:18.802069-04:00"
   }
 ]
