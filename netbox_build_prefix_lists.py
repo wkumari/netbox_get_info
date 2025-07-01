@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 
 """
-This small program connects to my Netbox and builds a set of prefix lists.
-This relies on 'tags' in Netbox. If an IP is tagged with 'filter', it will be
-added to prefix-lists according to the other tags.
+This  connects to my Netbox and builds a set of prefix lists.
+It relied on the custom field 'prefix_list_names' in Netbox to determine which
+prefixes to include in which prefix lists.
 
-It uses Authelia to login to Netbox. This is because I don't really want to
+Note: If the "type" of the entry is "ip-address", it will be converted to a
+/32 or /128 prefix, depending on whether it is IPv4 or IPv6.
+If the type is "prefix" or "aggregate", it will be left as is.
+
+It uses Authelia to login to Netbox, because I don't really want to
 just expose my Netbox API token to the world.
 """
 
+from enum import Enum
 import argparse
 import coloredlogs
 import json
@@ -44,15 +49,30 @@ PAYLOAD_TEMPLATE = """{{"username": "{username}", \
 OUTPUT_FILE = "GENERATED_PREFIX_LISTS.j2"
 
 
+class PrefixType(Enum):
+    """Enum for the type of prefix."""
+
+    UNKNOWN = 0
+    IP_ADDRESS = 1
+    PREFIX = 2
+    AGGREGATE = 3
+
+
 class Prefix:
-    ip = None
-    device = None
-    interface = None
-    dns = None
-    desc = None
-    tags = []
-    custom_fields = None
-    prefix_lists = {}  # List of prefix lists to add this prefix to.
+    """Class to hold a prefix and its associated data."""
+
+    def __init__(self):
+        """Initialize the Prefix object."""
+        self.type = PrefixType.UNKNOWN  # Type of prefix (IP, prefix, aggregate)
+        self.v4v6 = None  # IPv4 or IPv6
+        self.ip = None
+        self.device = None
+        self.interface = None
+        self.dns = None
+        self.desc = None
+        self.tags = []
+        self.custom_fields = None
+        self.prefix_lists = {}  # List of prefix lists to add this prefix to.
 
     def __str__(self):
         return (
@@ -86,22 +106,11 @@ def abort(msg):
 
 def ParseOptions(arg_list: list[str] | None):
     """Parses the command line options."""
-    usage = """%prog [-v, -d ]
 
-  This connects to my netbox server, pulls IPs / prefixes which have a custom
-  field 'prefix_list_names' and builds a prefix list file from them.
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
 
-  Usage:
-
-	%prog <command>
-
-  Example:
-      %prog -s netbox.kumari.net
-
-  192.0.2.1/32,"Example BGP Prefix"
-  """
-
-    parser = argparse.ArgumentParser()
     parser.add_argument(
         "-d",
         "--debug",
@@ -193,14 +202,45 @@ def parse_prefixes(prefixes):
 
         # Convert the entry to a Prefix object
         prefix = Prefix()
+        url = entry.get("url", None)
+        if not url:
+            logging.warning("Skipping entry with no URL: %s" % entry)
+            continue
+        match url:
+            case url if "/api/ipam/aggregates/" in url:
+                prefix.type = PrefixType.AGGREGATE
+            case url if "/api/ipam/prefixes/" in url:
+                prefix.type = PrefixType.PREFIX
+            case url if "/api/ipam/ip-addresses/" in url:
+                prefix.type = PrefixType.IP_ADDRESS
+            case _:
+                logging.warning("Unknown prefix type for URL: %s" % url)
+                prefix.type = PrefixType.UNKNOWN
+                continue
         prefix.ip = entry.get("address", None)
         if not prefix.ip:
             prefix.ip = entry.get("prefix", None)
         if not prefix.ip:
             # If the entry has no address, skip it.
-
             logging.warning("Skipping entry with no address: %s" % entry)
             continue
+        # Fixup the IP addresses. If it is an IP, make it a /32 or /128.
+        if prefix.type == PrefixType.IP_ADDRESS:
+            family = entry.get("family", None)
+            if family["value"] == 4:
+                prefix.ip += "/32"
+                ip = prefix.ip.split("/")[0]
+                prefix.ip = f"{ip}/32"
+            elif family["value"] == 6:
+                prefix.ip += "/128"
+                ip = prefix.ip.split("/")[0]
+                prefix.ip = f"{ip}/128"
+            else:
+                logging.warning(
+                    "Unknown family for IP address %s: %s. Skipping entry."
+                    % (prefix.ip, family)
+                )
+                continue
         assigned_object = entry.get("assigned_object", None)
         if assigned_object:
             # If the assigned object is a device, set the device and interface.
