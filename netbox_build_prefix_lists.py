@@ -79,7 +79,7 @@ class Prefix:
         self.device = None
         self.interface = None
         self.dns = None
-        self.desc = None
+        self.descr = None
         self.tags = []
         self.custom_fields = None
         self.prefix_lists = {}  # List of prefix lists to add this prefix to.
@@ -131,11 +131,6 @@ class Config:
         self.authelia_login_url = None
         self.authelia_username = None
         self.authelia_password = None
-
-
-# A dictionary of prefix-filter name [ Prefix ]
-# E.g: prefixes["BASTIONS"][{ip:"192.168.1.1", device:"rtr1.iad", ...}]
-prefixes = {}
 
 
 # Base class for all exceptions
@@ -227,12 +222,12 @@ def get_credentials(filename):
     # Expand the user directory if needed.
     filename = os.path.expanduser(filename)
     try:
-        with open(filename, "r") as jsonfile:
+        with open(filename, "r", encoding="utf-8") as jsonfile:
             data = json.load(jsonfile)
             config.netbox_server = data["server"]
             config.netbox_token = data["token"]
             if "authelia" in data:
-                print("Using Authelia for authentication.")
+                logging.info("Using Authelia for authentication.")
                 config.authelia_login_url = data["authelia"]["authelia_login_url"]
                 config.authelia_username = data["authelia"]["username"]
                 config.authelia_password = data["authelia"]["password"]
@@ -262,7 +257,7 @@ def parse_prefixes(prefixes):
         prefix = Prefix()
         url = entry.get("url", None)
         if not url:
-            logging.warning("Skipping entry with no URL: %s" % entry)
+            logging.warning("Skipping entry with no URL: %s", entry)
             continue
         match url:
             case url if "/api/ipam/aggregates/" in url:
@@ -272,7 +267,7 @@ def parse_prefixes(prefixes):
             case url if "/api/ipam/ip-addresses/" in url:
                 prefix.type = PrefixType.IP_ADDRESS
             case _:
-                logging.warning("Unknown prefix type for URL: %s" % url)
+                logging.warning("Unknown prefix type for URL: %s", url)
                 prefix.type = PrefixType.UNKNOWN
                 continue
         prefix.ip = entry.get("address", None)
@@ -280,7 +275,7 @@ def parse_prefixes(prefixes):
             prefix.ip = entry.get("prefix", None)
         if not prefix.ip:
             # If the entry has no address, skip it.
-            logging.warning("Skipping entry with no address: %s" % entry)
+            logging.warning("Skipping entry with no address: %s", entry)
             continue
         # Fixup the IP addresses. If it is an IP, make it a /32 or /128.
         if prefix.type == PrefixType.IP_ADDRESS:
@@ -343,23 +338,23 @@ def connect_to_netbox(config):
 
     if config.authelia_login_url:
         logging.debug(
-            "Using Authelia for authentication - %s" % config.authelia_login_url
+            "Using Authelia for authentication - %s", config.authelia_login_url
         )
         payload = PAYLOAD_TEMPLATE.format(
             username=config.authelia_username, password=config.authelia_password
         )
 
         # Get a cookie from Authelia
-        logging.debug("Connecting to %s" % config.authelia_login_url)
+        logging.debug("Connecting to %s", config.authelia_login_url)
         post = session.post(config.authelia_login_url, data=payload)
         if post.status_code != 200:
             abort("Authelia login failed: %s" % post.text)
-        logging.debug("Logged in through %s" % config.authelia_login_url)
+        logging.debug("Logged in through %s", config.authelia_login_url)
 
-    logging.debug("Connecting to %s" % config.netbox_server)
+    logging.debug("Connecting to %s", config.netbox_server)
     nb = pynetbox.api("https://" + config.netbox_server, token=config.netbox_token)
     nb.http_session = session
-    logging.debug("Connected to %s" % config.netbox_server)
+    logging.debug("Connected to %s", config.netbox_server)
     return nb
 
 
@@ -367,15 +362,15 @@ def get_prefixes_from_netbox(nb):
     """Command to get IP addresses, prefixes and aggregates from Netbox."""
 
     prefixes = []
-    logging.info("Getting IP addresses from Netbox. Server: %s" % nb.base_url)
+    logging.info("Getting IP addresses from Netbox. Server: %s", nb.base_url)
     addrs = nb.ipam.ip_addresses.all()  # (tag="filter")
     for addr in addrs:
         prefixes.append(addr)
-    logging.info("Getting prefixes from Netbox. Server: %s" % nb.base_url)
+    logging.info("Getting prefixes from Netbox. Server: %s", nb.base_url)
     addrs = nb.ipam.prefixes.all()  # (tag="filter")
     for addr in addrs:
         prefixes.append(addr)
-    logging.info("Getting aggregates from Netbox. Server: %s" % nb.base_url)
+    logging.info("Getting aggregates from Netbox. Server: %s", nb.base_url)
     aggregates = nb.ipam.aggregates.all()
     for agg in aggregates:
         prefixes.append(agg)
@@ -384,27 +379,26 @@ def get_prefixes_from_netbox(nb):
 
 def dump_prefixes_to_file(prefixes, outfile):
     """Command to dump prefixes to a JSON file. Used for testing."""
-    all = []
+    all_prefixes = []
     for addr in prefixes:
         addr_dict = dict(addr)
-        all.append(addr_dict)
-    with open(outfile, "w") as jsonfile:
+        all_prefixes.append(addr_dict)
+    with open(outfile, "w", encoding="utf-8") as jsonfile:
         json.dump(
-            all,
+            all_prefixes,
             jsonfile,
             indent=2,
             default=str,
         )
-    logging.info
-    ("Dumped JSON to file %s" % outfile)
+    logging.info("Dumped JSON to file %s", outfile)
 
 
 def get_prefixes_from_file(filename):
-    logging.debug("Reading prefixes from file: %s" % filename)
+    logging.debug("Reading prefixes from file: %s", filename)
     try:
-        with open(filename, "r") as jsonfile:
+        with open(filename, "r", encoding="utf-8") as jsonfile:
             prefixes = json.load(jsonfile)
-            logging.debug("Read %d prefixes from file" % len(prefixes))
+            logging.debug("Read %d prefixes from file", len(prefixes))
     except IOError as e:
         abort(e)
     except ValueError as e:
@@ -415,13 +409,13 @@ def get_prefixes_from_file(filename):
 def write_prefix_list_files(prefix_list_dict):
     """Build the prefix lists from the prefix list dictionary."""
     for prefix_list, prefixes in prefix_list_dict.items():
-        logging.info("Building prefix list: %s" % prefix_list)
-        with open(prefix_list + "-prefix.j2", "w") as f:
+        logging.info("Building prefix list: %s", prefix_list)
+        with open(prefix_list + "-prefix.j2", "w", encoding="utf-8") as f:
             for prex in prefixes:
                 f.write(
                     "%s,%s,%s,%s\n" % (prex.ip, prex.device, prex.interface, prex.descr)
                 )
-        logging.info("Wrote %d prefixes to %s-prefix.j2" % (len(prefixes), prefix_list))
+        logging.info("Wrote %d prefixes to %s-prefix.j2", len(prefixes), prefix_list)
 
 
 def build_yaml_structure(prefix_list_dict):
@@ -473,9 +467,10 @@ def write_prefix_list_file(prefix_list_dict, filename):
         abort("No prefix lists to write, skipping file creation.")
         return
 
-    with open(filename, "w") as f:
-        str = file_header.format(date=os.popen("date").read().strip())
-        f.write(str)
+    with open(filename, "w", encoding="utf-8") as f:
+        # str = file_header.format(date=os.popen("date").read().strip())
+        # f.write(str)
+        f.write(file_header.format(date=os.popen("date").read().strip()))
         for prefix_list, prefixes in sorted(prefix_list_dict.items()):
             f.write(header_str.format(prefix_list.upper()))
             for prex in prefixes:
@@ -541,19 +536,19 @@ def main(arg_list: list[str] | None = None):
         nb = connect_to_netbox(config)
         if not nb:
             abort("Could not connect to Netbox server: %s" % config.netbox_server)
-        logging.debug("Connected to Netbox server: %s" % config.netbox_server)
+        logging.debug("Connected to Netbox server: %s", config.netbox_server)
 
         prefixes = get_prefixes_from_netbox(nb)
 
     if args.dumpfile:
         # If we have an output file, write the prefixes to it.
-        logging.debug("Writing prefixes to file: %s" % args.dumpfile)
+        logging.debug("Writing prefixes to file: %s", args.dumpfile)
         dump_prefixes_to_file(prefixes, args.dumpfile)
-        logging.info("Wrote %d prefixes to file" % len(prefixes))
+        logging.info("Wrote %d prefixes to file", len(prefixes))
         logging.debug("Exiting after writing prefixes to file")
         sys.exit(1)
 
-    logging.debug("Found %d prefixes" % len(prefixes))
+    logging.debug("Found %d prefixes", len(prefixes))
     prefix_list_list = parse_prefixes(prefixes)
     prefix_list_dict = build_prefix_list_dict(prefix_list_list)
 
@@ -562,7 +557,7 @@ def main(arg_list: list[str] | None = None):
     elif args.yaml:
         yaml_structure = build_yaml_structure(prefix_list_dict)
         yaml_file = args.outfile.replace(".j2", ".yaml")
-        with open(yaml_file, "w") as f:
+        with open(yaml_file, "w", encoding="utf-8") as f:
             yaml.dump(yaml_structure, f, indent=2)
         logging.info(
             "Wrote %d prefix lists containing %d entries to %s"
