@@ -20,14 +20,16 @@ just expose my Netbox API token to the world.
 
 from enum import Enum
 import argparse
-import coloredlogs
 import json
 import logging
 import os
-import pynetbox
-import requests
 import sys
 import yaml
+
+import coloredlogs
+import pynetbox
+import requests
+
 
 # This expects a configuration fille. By default it is ~/.credentials_netbox.json
 # It should contain a JSON object with the following format
@@ -57,6 +59,10 @@ PAYLOAD_TEMPLATE = """{{"username": "{username}", \
 # This is a JUNOS style file.
 # It will be written to the current directory.
 OUTPUT_FILE = "NETBOX_PREFIX_LISTS.j2"
+
+# Global variable to hold the parsed arguments
+# This is set in the main function and used throughout the script.
+args = None
 
 
 class PrefixType(Enum):
@@ -394,6 +400,7 @@ def dump_prefixes_to_file(prefixes, outfile):
 
 
 def get_prefixes_from_file(filename):
+    """Read prefixes from a JSON file."""
     logging.debug("Reading prefixes from file: %s", filename)
     try:
         with open(filename, "r", encoding="utf-8") as jsonfile:
