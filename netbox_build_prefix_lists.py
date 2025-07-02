@@ -27,21 +27,25 @@ import os
 import pynetbox
 import requests
 import sys
-import util_token
 import yaml
+
+# This expects a configuration fille. By default it is ~/.credentials_netbox.json
+# It should contain a JSON object with the following format
+# {
+#   "server": "netbox.example.com,
+#   "token": "your_nextbox_api_token",
+#   "authelia_server": "authelia.example.com",
+#   "authelia_login_url": "https://authelia.example.com/api/firstfactor"
+#   "username": "your_username",
+#   "password": "your_password"
+# }
+
 
 # Debug. If True then we print more stuff.
 DEBUG = False
 
-# The name of the netbox server.
-# Expects a file ~/.token_<server> containing the token.
-SERVER = "netbox.kumari.net"
-
-# The URL of my Authelia server's login. We post here to get a cookie.
-LOGIN_URL = "https://authelia.kumari.net/api/firstfactor"
-
 # Credential file for Authelia
-CREDENTIALS_FILE = "~/.credentials_authelia_netbox.json"
+CREDENTIALS_FILE = "~/.credentials_netbox.json"
 
 # The payload we send to Authelia
 PAYLOAD_TEMPLATE = """{{"username": "{username}", \
@@ -94,8 +98,6 @@ class Prefix:
         have_info = False
         comment = ""
         # Format the address and comment.
-        address = self.ip
-
         if self.dns:
             comment += "[ %s ] " % self.dns
             have_info = True
@@ -115,6 +117,22 @@ class Prefix:
         return comment
 
 
+class Config:
+    """Class to hold the information from the credentials file.
+
+    This is just to encapsulate the information and not have a very long list
+    of returns values from the get_credentials function."""
+
+    def __init__(self):
+        """Initialize the Config object."""
+        self.netbox_server = None
+        self.netbox_token = None
+        self.use_authelia = False
+        self.authelia_login_url = None
+        self.authelia_username = None
+        self.authelia_password = None
+
+
 # A dictionary of prefix-filter name [ Prefix ]
 # E.g: prefixes["BASTIONS"][{ip:"192.168.1.1", device:"rtr1.iad", ...}]
 prefixes = {}
@@ -131,7 +149,7 @@ class TemplateError(Error):
 
 def abort(msg):
     """Print error message and abort"""
-    logging.critical("Aborting: %s" % msg)
+    logging.critical("Aborting: %s", msg)
     sys.exit(-1)
 
 
@@ -149,21 +167,6 @@ def ParseOptions(arg_list: list[str] | None):
         action="store_true",
         default=DEBUG,
         help="Debug output.",
-    )
-    parser.add_argument(
-        "-n",
-        "--nologin",
-        dest="nologin",
-        action="store_true",
-        default=False,
-        help="""Do not login through Authelia.""",
-    )
-    parser.add_argument(
-        "-l",
-        "--limit",
-        dest="limit",
-        default="",
-        help="""The tag to filter (e.g: BASTIONS)""",
     )
     parser.add_argument(
         "-w",
@@ -189,14 +192,7 @@ def ParseOptions(arg_list: list[str] | None):
         help=f"""File to write the prefix lists to. This is a JUNOS style file.
         Default: {OUTPUT_FILE}""",
     )
-    parser.add_argument(
-        "-s",
-        "--server",
-        dest="server",
-        default=SERVER,
-        help="""The name of the netbox server.
-                  Expects a file ~/.token_<server> containing the token.""",
-    )
+
     parser.add_argument(
         "-y",
         "--no-yaml",
@@ -213,19 +209,34 @@ def ParseOptions(arg_list: list[str] | None):
         default=False,
         help="""Output the prefix lists in .j2 (text) format.""",
     )
+    parser.add_argument(
+        "-c",
+        "--credentials",
+        dest="credentials",
+        default="~/.netbox_credentials.json",
+        help="""Path to the credentials file (JSON) to use for authentication.
+        Default: ~/.netbox_credentials.json""",
+    )
 
-    args = parser.parse_args(arg_list)
-    return args
+    return parser.parse_args(arg_list)
 
 
 def get_credentials(filename):
     """Get the username and password from the config file."""
+    config = Config()
+    # Expand the user directory if needed.
     filename = os.path.expanduser(filename)
     try:
         with open(filename, "r") as jsonfile:
             data = json.load(jsonfile)
-            username: str = data["username"]
-            password: str = data["password"]
+            config.netbox_server = data["server"]
+            config.netbox_token = data["token"]
+            if "authelia" in data:
+                print("Using Authelia for authentication.")
+                config.authelia_login_url = data["authelia"]["authelia_login_url"]
+                config.authelia_username = data["authelia"]["username"]
+                config.authelia_password = data["authelia"]["password"]
+
     except IOError as e:
         abort(e)
     except (ValueError, KeyError) as e:
@@ -234,7 +245,7 @@ def get_credentials(filename):
       Expected: {"username":"bob", "password": "Hunter2"}'
             % (e, filename)
         )
-    return username, password
+    return config
 
 
 def parse_prefixes(prefixes):
@@ -325,27 +336,30 @@ def build_prefix_list_dict(prefixes):
     return prefix_list_dict
 
 
-def connect_to_netbox(server, token):
+def connect_to_netbox(config):
     """Connect to the Netbox server."""
     # Create a session to use for all requests
     session = requests.Session()
 
-    if not args.nologin:
-        (username, password) = get_credentials(CREDENTIALS_FILE)
-
-        payload = PAYLOAD_TEMPLATE.format(username=username, password=password)
+    if config.authelia_login_url:
+        logging.debug(
+            "Using Authelia for authentication - %s" % config.authelia_login_url
+        )
+        payload = PAYLOAD_TEMPLATE.format(
+            username=config.authelia_username, password=config.authelia_password
+        )
 
         # Get a cookie from Authelia
-        logging.debug("Connecting to %s" % LOGIN_URL)
-        post = session.post(LOGIN_URL, data=payload)
+        logging.debug("Connecting to %s" % config.authelia_login_url)
+        post = session.post(config.authelia_login_url, data=payload)
         if post.status_code != 200:
             abort("Authelia login failed: %s" % post.text)
-        logging.debug("Logged in through %s" % LOGIN_URL)
+        logging.debug("Logged in through %s" % config.authelia_login_url)
 
-    logging.debug("Connecting to %s" % args.server)
-    nb = pynetbox.api("https://" + args.server, token=token)
+    logging.debug("Connecting to %s" % config.netbox_server)
+    nb = pynetbox.api("https://" + config.netbox_server, token=config.netbox_token)
     nb.http_session = session
-    logging.debug("Connected to %s" % args.server)
+    logging.debug("Connected to %s" % config.netbox_server)
     return nb
 
 
@@ -381,7 +395,8 @@ def dump_prefixes_to_file(prefixes, outfile):
             indent=2,
             default=str,
         )
-    print("Dumped JSON to file %s" % outfile)
+    logging.info
+    ("Dumped JSON to file %s" % outfile)
 
 
 def get_prefixes_from_file(filename):
@@ -507,9 +522,15 @@ def main(arg_list: list[str] | None = None):
     if args.debug:
         coloredlogs.set_level("DEBUG")
 
+    config = get_credentials(args.credentials)
+    if not config.netbox_server:
+        abort("No Netbox server specified in credentials file: %s" % args.credentials)
+    if not config.netbox_token:
+        abort("No Netbox token specified in credentials file: %s" % args.credentials)
+
     prefixes = []
 
-    token = util_token.get_token(args.server)
+    # token = util_token.get_token(args.server)
 
     if args.infile:
         # If we have an input file, read the prefixes from it.
@@ -517,10 +538,10 @@ def main(arg_list: list[str] | None = None):
 
     else:
         # If we don't have an input file, get the prefixes from Netbox.
-        nb = connect_to_netbox(args.server, token)
+        nb = connect_to_netbox(config)
         if not nb:
-            abort("Could not connect to Netbox server: %s" % args.server)
-        logging.debug("Connected to Netbox server: %s" % args.server)
+            abort("Could not connect to Netbox server: %s" % config.netbox_server)
+        logging.debug("Connected to Netbox server: %s" % config.netbox_server)
 
         prefixes = get_prefixes_from_netbox(nb)
 

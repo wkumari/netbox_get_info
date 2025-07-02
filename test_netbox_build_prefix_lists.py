@@ -67,15 +67,18 @@ def test_prefixes_from_file(filename):
 
 class TestUtilityFunctions(unittest.TestCase):
     def test_get_credentials(self):
-        (user, password) = get_credentials(TEST_CREDENTIALS_FILE)
-        self.assertEqual(user, "testuser")
-        self.assertEqual(password, "testpassword")
+        config = get_credentials(TEST_CREDENTIALS_FILE)
+        self.assertEqual(config.authelia_username, "test_user")
+        self.assertEqual(config.authelia_password, "test_password")
+        self.assertEqual(config.netbox_server, "netbox.example.com")
+        self.assertEqual(config.netbox_token, "your_nextbox_api_token")
+        self.assertEqual(
+            config.authelia_login_url, "https://authelia.example.com/api/firstfactor"
+        )
 
     def test_ParseOptions(self):
-        cli_opts = shlex.split("-d --nologin --server http://localhost:8000")
+        cli_opts = shlex.split("-d ")
         args = ParseOptions(cli_opts)
-        self.assertEqual(args.server, "http://localhost:8000")
-        self.assertTrue(args.nologin)
         self.assertTrue(args.debug)
 
 
@@ -86,17 +89,18 @@ class TestGetPrefixes(unittest.TestCase):
     # but rather mocks the Netbox API call to return predefined data.
     def setUp(self):
         self.prefix_array = test_prefixes_from_file(TEST_PREFIXES_FILE)
+        print("Prefix array length:", len(self.prefix_array))
 
     def test_get_prefixes_from_netbox(self):
 
         # We mock the pynetbox API call to return our test data
         netbox_mock = Mock()
-        # We are using nb.ipam.ip_addresses.all, but mock filter in case we use it.
-        netbox_mock.ipam.ip_addresses.filter.return_value = self.prefix_array
+        # Mock the 3 czalls that we make to the Netbox API
         netbox_mock.ipam.ip_addresses.all.return_value = self.prefix_array
+        netbox_mock.ipam.prefixes.all.return_value = self.prefix_array
         netbox_mock.ipam.aggregates.all.return_value = self.prefix_array
 
-        self.assertEqual(len(get_prefixes_from_netbox(netbox_mock)), 6)
+        self.assertEqual(len(get_prefixes_from_netbox(netbox_mock)), 9)
 
 
 class TestPrefixes(unittest.TestCase):
