@@ -9,6 +9,11 @@ Note: If the "type" of the entry is "ip-address", it will be converted to a
 /32 or /128 prefix, depending on whether it is IPv4 or IPv6.
 If the type is "prefix" or "aggregate", it will be left as is.
 
+It will output the prefix list information in both an Aerleon style YAML file, as
+well as a JUNOS style .j2 file. This initially seems redundant, but it turns out
+that we need this information both toe build ACLs (e.g. in Aerleon) and
+to build prefix lists in JUNOS (e.g. for BGP).
+
 It uses Authelia to login to Netbox, because I don't really want to
 just expose my Netbox API token to the world.
 """
@@ -345,14 +350,15 @@ def connect_to_netbox(server, token):
 
 
 def get_prefixes_from_netbox(nb):
-    """Command to get prefixes from Netbox."""
+    """Command to get IP addresses, prefixes and aggregates from Netbox."""
 
-    # This used to also parse the prefixes, but now it just returns
-    # the prefixes with the tag 'filter'.
-    # This was done to make testing of the code easier.
-    logging.info("Getting prefixes from Netbox. Server: %s" % nb.base_url)
     prefixes = []
+    logging.info("Getting IP addresses from Netbox. Server: %s" % nb.base_url)
     addrs = nb.ipam.ip_addresses.all()  # (tag="filter")
+    for addr in addrs:
+        prefixes.append(addr)
+    logging.info("Getting prefixes from Netbox. Server: %s" % nb.base_url)
+    addrs = nb.ipam.prefixes.all()  # (tag="filter")
     for addr in addrs:
         prefixes.append(addr)
     logging.info("Getting aggregates from Netbox. Server: %s" % nb.base_url)
