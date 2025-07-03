@@ -1,0 +1,6 @@
+colored==2.3.0
+coloredlogs==15.0.1
+pynetbox==7.5.0
+PyYAML==6.0.2
+PyYAML==6.0.2
+Requests==2.32.4
