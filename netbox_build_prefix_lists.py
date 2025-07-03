@@ -55,10 +55,12 @@ PAYLOAD_TEMPLATE = """{{"username": "{username}", \
   "targetURL": "https://netbox.kumari.net/api",
   "requestMethod": "GET"}}"""
 
-# Output file for the prefix lists
-# This is a JUNOS style file.
-# It will be written to the current directory.
-OUTPUT_FILE = "NETBOX_PREFIX_LISTS.j2"
+# Output filename for the prefix lists
+# .j2 will be appened for the JunOS style file.
+# .yaml will be appended for the YAML file.
+OUTPUT_FILE = "NETBOX_PREFIX_LISTS"
+# Location for the prefix definitions
+LOCATION = "./caprica/def/"
 
 # Global variable to hold the parsed arguments
 # This is set in the main function and used throughout the script.
@@ -204,10 +206,10 @@ def ParseOptions(arg_list: list[str] | None):
     )
     parser.add_argument(
         "-j",
-        "--j2",
+        "--no-j2",
         dest="j2",
-        action="store_true",
-        default=False,
+        action="store_false",
+        default=True,
         help="""Output the prefix lists in .j2 (text) format.""",
     )
     parser.add_argument(
@@ -217,6 +219,15 @@ def ParseOptions(arg_list: list[str] | None):
         default="~/.netbox_credentials.json",
         help="""Path to the credentials file (JSON) to use for authentication.
         Default: ~/.netbox_credentials.json""",
+    )
+    parser.add_argument(
+        "-l",
+        "--location",
+        dest="location",
+        default=LOCATION,
+        help="""Location to use for the Netbox API calls. This is used to limit the
+        scope of the API calls to a specific location.
+        Default: ./caprica/def/""",
     )
 
     return parser.parse_args(arg_list)
@@ -444,6 +455,8 @@ def build_yaml_structure(prefix_list_dict):
 
 def write_prefix_list_file(prefix_list_dict, filename):
     """Writes a JUNOS style prefix list file."""
+
+    filename = filename + ".j2"
     header_str = "    prefix-list {} {{\n"
     comment_str = "        {}\n"
     address_str = "        {};\n"
@@ -479,7 +492,7 @@ def write_prefix_list_file(prefix_list_dict, filename):
         # f.write(str)
         f.write(file_header.format(date=os.popen("date").read().strip()))
         for prefix_list, prefixes in sorted(prefix_list_dict.items()):
-            f.write(header_str.format(prefix_list.upper()))
+            f.write(header_str.format("NB_" + prefix_list.upper()))
             for prex in prefixes:
                 have_info = False
                 comment = "/* "
@@ -507,7 +520,33 @@ def write_prefix_list_file(prefix_list_dict, filename):
                 f.write(address_str.format(address))
             f.write(footer_str)
         f.write(file_footer)
+        logging.info(
+            "Wrote %d prefix lists to %s" % (len(prefix_list_dict.keys()), filename)
+        )
         f.close()
+
+
+def write_prefix_list_file_yaml(prefix_list_dict, filename):
+    """Writes a YAML file with the prefix lists."""
+    filename = os.path.join(args.location, filename)
+    filename = filename + ".yaml"
+    yaml_structure = build_yaml_structure(prefix_list_dict)
+
+    with open(filename, "w", encoding="utf-8") as f:
+        yaml.dump(yaml_structure, f, indent=2)
+    logging.info(
+        "Wrote %d prefix lists containing %d entries to %s"
+        % (
+            len(yaml_structure["networks"]),
+            sum(
+                [
+                    len(yaml_structure["networks"][c]["values"])
+                    for c in yaml_structure["networks"]
+                ]
+            ),
+            filename,
+        )
+    )
 
 
 def main(arg_list: list[str] | None = None):
@@ -561,25 +600,9 @@ def main(arg_list: list[str] | None = None):
 
     if args.j2:
         write_prefix_list_file(prefix_list_dict, args.outfile)
-    elif args.yaml:
-        yaml_structure = build_yaml_structure(prefix_list_dict)
-        yaml_file = args.outfile.replace(".j2", ".yaml")
-        with open(yaml_file, "w", encoding="utf-8") as f:
-            yaml.dump(yaml_structure, f, indent=2)
-        logging.info(
-            "Wrote %d prefix lists containing %d entries to %s"
-            % (
-                len(yaml_structure["networks"]),
-                sum(
-                    [
-                        len(yaml_structure["networks"][c]["values"])
-                        for c in yaml_structure["networks"]
-                    ]
-                ),
-                yaml_file,
-            )
-        )
-    else:
+    if args.yaml:
+        write_prefix_list_file_yaml(prefix_list_dict, args.outfile)
+    if not args.j2 and not args.yaml:
         abort("No output format specified. Use -j for J2 or -y for YAML.")
 
 
