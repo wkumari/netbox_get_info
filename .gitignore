@@ -1,0 +1,5 @@
+# Ignore
+*.pyc
+
+# Generated files.
+**/NETBOX_PREFIX_*
