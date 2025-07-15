@@ -83,13 +83,13 @@ class Prefix:
         """Initialize the Prefix object."""
         self.type = PrefixType.UNKNOWN  # Type of prefix (IP, prefix, aggregate)
         self.v4v6 = None  # IPv4 or IPv6
-        self.ip = None
+        self.ip = ""  # The IP address or prefix (e.g. 192.0.2.0/24)
         self.device = None
         self.interface = None
         self.dns = None
         self.descr = None
         self.tags = []
-        self.custom_fields = None
+        self.custom_fields = []  # Custom fields from Netbox.
         self.prefix_lists = {}  # List of prefix lists to add this prefix to.
 
     def __str__(self):
@@ -287,9 +287,9 @@ def parse_prefixes(prefixes):
                 logging.warning("Unknown prefix type for URL: %s", url)
                 prefix.type = PrefixType.UNKNOWN
                 continue
-        prefix.ip = entry.get("address", None)
+        prefix.ip = entry.get("address", "")
         if not prefix.ip:
-            prefix.ip = entry.get("prefix", None)
+            prefix.ip = entry.get("prefix", "")
         if not prefix.ip:
             # If the entry has no address, skip it.
             logging.warning("Skipping entry with no address: %s", entry)
@@ -297,11 +297,11 @@ def parse_prefixes(prefixes):
         # Fixup the IP addresses. If it is an IP, make it a /32 or /128.
         if prefix.type == PrefixType.IP_ADDRESS:
             family = entry.get("family", None)
-            if family["value"] == 4:
+            if family is not None and family["value"] == 4:
                 prefix.ip += "/32"
                 ip = prefix.ip.split("/")[0]
                 prefix.ip = f"{ip}/32"
-            elif family["value"] == 6:
+            elif family is not None and family["value"] == 6:
                 prefix.ip += "/128"
                 ip = prefix.ip.split("/")[0]
                 prefix.ip = f"{ip}/128"
@@ -321,7 +321,7 @@ def parse_prefixes(prefixes):
         prefix.dns = entry.get("dns_name", None)
         prefix.descr = entry.get("description", None)
         prefix.tags = entry.get("tags", [])
-        prefix.custom_fields = entry.get("custom_fields")
+        prefix.custom_fields = entry.get("custom_fields", [])
 
         if (
             "prefix_list_names" in prefix.custom_fields
@@ -471,7 +471,7 @@ def write_prefix_list_file(prefix_list_dict, filename):
  * Each prefix list is named after the prefix list name in Netbox.
  * The format is:
  *   prefix-list <name> {{
- *       /* <dns> - <device>:<interface>  -- <description> */
+ *       Comment <dns> - <device>:<interface>  -- <description>
  *       <address>;
  *   }}
  *
