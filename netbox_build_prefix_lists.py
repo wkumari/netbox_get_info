@@ -197,7 +197,6 @@ def ParseOptions(arg_list: list[str] | None):
     )
 
     parser.add_argument(
-        "-y",
         "--no-yaml",
         dest="yaml",
         action="store_false",
@@ -205,7 +204,6 @@ def ParseOptions(arg_list: list[str] | None):
         help="""Output the prefix lists in YAML format.""",
     )
     parser.add_argument(
-        "-j",
         "--no-j2",
         dest="j2",
         action="store_false",
@@ -225,8 +223,7 @@ def ParseOptions(arg_list: list[str] | None):
         "--location",
         dest="location",
         default=LOCATION,
-        help="""Location to use for the Netbox API calls. This is used to limit the
-        scope of the API calls to a specific location.
+        help="""Location to use for the output of the definition files.
         Default: ./caprica/def/""",
     )
 
@@ -535,7 +532,7 @@ def write_prefix_list_file_yaml(prefix_list_dict, filename):
     with open(filename, "w", encoding="utf-8") as f:
         yaml.dump(yaml_structure, f, indent=2)
     logging.info(
-        "Wrote %d prefix lists containing %d entries to %s"
+        "Wrote %d prefix lists containing %d entries to definition file %s"
         % (
             len(yaml_structure["networks"]),
             sum(
@@ -603,7 +600,10 @@ def main(arg_list: list[str] | None = None):
     if args.yaml:
         write_prefix_list_file_yaml(prefix_list_dict, args.outfile)
     if not args.j2 and not args.yaml:
-        abort("No output format specified. Use -j for J2 or -y for YAML.")
+        abort(
+            "No output format specified. Use --no-j2 or --no-yaml to skip"
+            + "writing J2 or YAML respectively."
+        )
 
 
 if __name__ == "__main__":
